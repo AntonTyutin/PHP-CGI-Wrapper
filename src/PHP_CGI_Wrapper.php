@@ -20,13 +20,17 @@
 // Defined here because we can't concatenate class constants.
 define('MULTIPART_FORMAT', "%s\r\nContent-Disposition: form-data; name=\"%s\"");
 define('MULTIPART_TEXT_FORMAT', MULTIPART_FORMAT."\r\n\r\n%s\r\n");
-define('MULTIPART_FILE_FORMAT',
-	MULTIPART_FORMAT."; filename=\"%s\"\r\nContent-Type: %s\r\n\r\n");
+define('MULTIPART_FILE_FORMAT', MULTIPART_FORMAT."; filename=\"%s\"\r\nContent-Type: %s\r\n\r\n");
 
 class PHP_CGI_Wrapper {
-	const BUFSIZ = 1024;
 
+	const BUFSIZ = 1024;
+	const DEFAULT_TYPE = 'application/octet-stream';
+	const MULTIPART_RE = '!^multipart/form-data; boundary=([^\s]+)!';
+
+	protected $boundary;
 	protected $script, $ph, $pipes;
+
 	public function __construct($script) {
 		$this->script		= $script;
 
@@ -67,7 +71,6 @@ class PHP_CGI_Wrapper {
 			}
 		}
 	}
-
 	protected function set_cookies() {
 		if (isset($this->env['HTTP_COOKIE']) || !count($this->cookie))
 			return; // cookies already set or none available
@@ -79,9 +82,6 @@ class PHP_CGI_Wrapper {
 
 		putenv('HTTP_COOKIE='.implode('; ', $cookies));
 	}
-
-	protected $boundary;
-	const MULTIPART_RE = '!^multipart/form-data; boundary=([^\s]+)!';
 
 	protected function is_multipart() {
 		if (preg_match(self::MULTIPART_RE, $this->content_type, $m)) {
@@ -113,10 +113,10 @@ class PHP_CGI_Wrapper {
 		}
 		fclose($fh);
 	}
-
 	/* Because PHP is a steaming pile of shit, you can't access the raw post
 	 * data when using multipart/form-data encoding. Thus, we waste our
 	 * PRECIOUS CPU CYCLES reconstructing the POST data manually. */
+
 	protected function handle_multipart() {
 		// do regular POST values
 		foreach ($this->post as $name => $value) {
@@ -132,7 +132,6 @@ class PHP_CGI_Wrapper {
 		fwrite($this->pipes[0], $this->boundary."--\r\n");
 	}
 
-	const DEFAULT_TYPE = 'application/octet-stream';
 	protected function handle_files() {
 		foreach ($this->files as $name => $file) {
 			// should we use is_uploaded_file() here? only
@@ -190,28 +189,4 @@ class PHP_CGI_Wrapper {
 	protected static function escapequotes($string) {
 		return str_replace('"', '\"', $string);
 	}
-
-	const CGI_FILENAME = 'DOCUMENT_PATH';
-	public static function is_handler() {
-		return isset($_SERVER[self::CGI_FILENAME]);
-	}
-	
-	public static function do_handler() {
-		chdir(dirname($_SERVER[self::CGI_FILENAME]));
-		execute_cgi(escapeshellarg($_SERVER[self::CGI_FILENAME]));
-		exit;
-	}
-}
-
-function execute_cgi($script) {
-	$cgi = new PHP_CGI_Wrapper($script);
-	$cgi->run();
-
-	exit;
-}
-
-// If $_SERVER['DOCUMENT_PATH'], a non-standard environment value, is set, then
-// assume we're acting like a handler for CGI scripts in a web server setup.
-if (PHP_CGI_Wrapper::is_handler()) {
-	PHP_CGI_Wrapper::do_handler();
 }
